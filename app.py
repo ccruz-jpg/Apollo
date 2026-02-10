@@ -6,7 +6,7 @@ import os
 
 st.title("Apollo → Excel Export Tool")
 
-APOLLO_API_KEY = st.secrets.get("APOLLO_API_KEY")
+APOLLO_API_KEY = st.secrets.get("S6-Hgbf47Xvzm7tt_bxCNg")
 
 def fetch_apollo_data(query):
     url = "https://api.apollo.io/v1/mixed_people/search"
