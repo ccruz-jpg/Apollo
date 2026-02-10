@@ -1,30 +1,42 @@
-
 import streamlit as st
 import requests
 import pandas as pd
 import time
 
+st.set_page_config(page_title="Apollo Export Masivo", layout="wide")
+
 st.title("Apollo → Exportación Masiva (1000+ Leads)")
 
-APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
+# Leer API key desde Streamlit Secrets
+APOLLO_API_KEY = st.secrets["0fl3eqL2h102aiuGCleiPw"]
+
 
 def fetch_page(query, page):
     url = "https://api.apollo.io/v1/mixed_people/search"
 
+    headers = {
+        "X-Api-Key": APOLLO_API_KEY,
+        "Content-Type": "application/json"
+    }
+
     payload = {
-        "api_key": APOLLO_API_KEY,
         "q_keywords": query,
         "page": page
     }
 
-    response = requests.post(url, json=payload)
+    try:
+        response = requests.post(url, json=payload, headers=headers)
 
-    if response.status_code != 200:
-        st.error(f"Error API: {response.text}")
+        if response.status_code != 200:
+            st.error(f"Error API: {response.text}")
+            return []
+
+        data = response.json()
+        return data.get("people", [])
+
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
         return []
-
-    data = response.json()
-    return data.get("people", [])
 
 
 def export_massive(query, max_pages):
@@ -39,6 +51,7 @@ def export_massive(query, max_pages):
         people = fetch_page(query, page)
 
         if not people:
+            status.text("No hay más resultados.")
             break
 
         for p in people:
@@ -52,13 +65,16 @@ def export_massive(query, max_pages):
 
         progress.progress(page / max_pages)
 
-        # Evitar rate limits
+        # Evitar rate limits de Apollo
         time.sleep(1)
 
     return pd.DataFrame(all_rows)
 
 
-query = st.text_input("Palabras clave de búsqueda (ej: security founder bogota)")
+# UI
+query = st.text_input(
+    "Palabras clave de búsqueda (ej: security founder bogota)"
+)
 
 max_pages = st.slider(
     "Número de páginas a exportar (≈25 leads por página)",
@@ -83,7 +99,7 @@ if st.button("Exportar masivo"):
         else:
             st.success(f"Exportados {len(df)} leads")
 
-            st.dataframe(df)
+            st.dataframe(df, use_container_width=True)
 
             excel_file = "apollo_massive_export.xlsx"
             df.to_excel(excel_file, index=False)
