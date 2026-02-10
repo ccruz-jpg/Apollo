@@ -3,9 +3,9 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Apollo Contacts Export", layout="wide")
+st.set_page_config(page_title="Apollo Contacts Table", layout="wide")
 
-st.title("Apollo → Exportación Masiva de Contactos")
+st.title("Apollo → Tabla de Contactos")
 
 APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
 
@@ -48,14 +48,16 @@ def export_contacts(max_pages):
         contacts = fetch_page(page)
 
         if not contacts:
-            status.text("No hay más contactos.")
             break
 
         for c in contacts:
+
             all_rows.append({
                 "Nombre": c.get("name"),
                 "Empresa": c.get("organization_name"),
                 "Email": c.get("email"),
+                "Teléfono": c.get("phone_number"),
+                "Ciudad": c.get("city"),
                 "Cargo": c.get("title"),
                 "LinkedIn": c.get("linkedin_url")
             })
@@ -68,34 +70,34 @@ def export_contacts(max_pages):
 
 
 max_pages = st.slider(
-    "Número de páginas a exportar (100 contactos por página)",
+    "Número de páginas a cargar (100 contactos por página)",
     min_value=1,
     max_value=100,
-    value=10
+    value=5
 )
 
 estimated = max_pages * 100
 st.info(f"Estimado: ~{estimated} contactos")
 
-if st.button("Exportar contactos"):
+if st.button("Cargar contactos"):
 
-    with st.spinner("Exportando contactos..."):
-
+    with st.spinner("Descargando contactos..."):
         df = export_contacts(max_pages)
 
     if df.empty:
         st.warning("No se encontraron contactos")
     else:
-        st.success(f"Exportados {len(df)} contactos")
+        st.success(f"{len(df)} contactos cargados")
 
+        # 👉 Mostrar tabla interactiva
         st.dataframe(df, use_container_width=True)
 
-        excel_file = "apollo_contacts_export.xlsx"
-        df.to_excel(excel_file, index=False)
+        # 👉 Descargar CSV (opcional)
+        csv = df.to_csv(index=False).encode("utf-8")
 
-        with open(excel_file, "rb") as f:
-            st.download_button(
-                "Descargar Excel",
-                f,
-                file_name=excel_file
-            )
+        st.download_button(
+            "Descargar CSV",
+            csv,
+            "apollo_contacts.csv",
+            "text/csv"
+        )
