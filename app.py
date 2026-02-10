@@ -8,7 +8,7 @@ st.set_page_config(page_title="Apollo Export Masivo", layout="wide")
 st.title("Apollo → Exportación Masiva (1000+ Leads)")
 
 # Leer API key desde Streamlit Secrets
-APOLLO_API_KEY = st.secrets["0fl3eqL2h102aiuGCleiPw"]
+APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
 
 
 def fetch_page(query, page):
