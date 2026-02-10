@@ -6,7 +6,7 @@ import time
 
 st.title("Apollo → Exportación Masiva (1000+ Leads)")
 
-APOLLO_API_KEY = st.secrets.get("0fl3eqL2h102aiuGCleiPw")
+APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
 
 def fetch_page(query, page):
     url = "https://api.apollo.io/v1/mixed_people/search"
