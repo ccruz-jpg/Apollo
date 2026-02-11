@@ -3,12 +3,36 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Apollo Contacts Table", layout="wide")
+st.set_page_config(page_title="Apollo Filtros", layout="wide")
 
-st.title("Apollo → Tabla de Contactos")
+st.title("Apollo → Búsqueda con Filtros")
 
 APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
 
+
+# ---------- FORMULARIO DE FILTROS ----------
+
+with st.sidebar:
+
+    st.header("Filtros")
+
+    keyword = st.text_input("Keyword / Nombre")
+    company = st.text_input("Empresa")
+    title = st.text_input("Cargo")
+    city = st.text_input("Ciudad")
+    email = st.text_input("Email")
+
+    max_pages = st.slider(
+        "Número de páginas",
+        min_value=1,
+        max_value=50,
+        value=5
+    )
+
+    search_button = st.button("Buscar contactos")
+
+
+# ---------- API ----------
 
 def fetch_page(page):
 
@@ -21,8 +45,16 @@ def fetch_page(page):
 
     payload = {
         "page": page,
-        "per_page": 100
+        "per_page": 100,
+        "q_keywords": keyword,
+        "organization_name": company,
+        "person_titles": [title] if title else None,
+        "city": city,
+        "email": email
     }
+
+    # limpiar campos vacíos
+    payload = {k: v for k, v in payload.items() if v}
 
     response = requests.post(url, json=payload, headers=headers)
 
@@ -34,7 +66,7 @@ def fetch_page(page):
     return data.get("contacts", [])
 
 
-def export_contacts(max_pages):
+def search_contacts():
 
     all_rows = []
 
@@ -69,35 +101,25 @@ def export_contacts(max_pages):
     return pd.DataFrame(all_rows)
 
 
-max_pages = st.slider(
-    "Número de páginas a cargar (100 contactos por página)",
-    min_value=1,
-    max_value=100,
-    value=5
-)
+# ---------- EJECUCIÓN ----------
 
-estimated = max_pages * 100
-st.info(f"Estimado: ~{estimated} contactos")
+if search_button:
 
-if st.button("Cargar contactos"):
-
-    with st.spinner("Descargando contactos..."):
-        df = export_contacts(max_pages)
+    with st.spinner("Buscando contactos..."):
+        df = search_contacts()
 
     if df.empty:
-        st.warning("No se encontraron contactos")
+        st.warning("No se encontraron resultados")
     else:
-        st.success(f"{len(df)} contactos cargados")
+        st.success(f"{len(df)} contactos encontrados")
 
-        # 👉 Mostrar tabla interactiva
         st.dataframe(df, use_container_width=True)
 
-        # 👉 Descargar CSV (opcional)
         csv = df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
             "Descargar CSV",
             csv,
-            "apollo_contacts.csv",
+            "apollo_resultados.csv",
             "text/csv"
         )
