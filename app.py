@@ -3,17 +3,23 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Apollo Advanced Filters", layout="wide")
+st.set_page_config(page_title="Apollo Contacts Explorer", layout="wide")
 
-st.title("Apollo → Filtros Avanzados")
+st.title("Apollo Contacts Explorer")
 
-APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
+# ---------- API KEY ----------
+
+try:
+    APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
+except:
+    st.error("API key no encontrada en Streamlit Secrets")
+    st.stop()
 
 # ---------- SIDEBAR FILTROS ----------
 
 with st.sidebar:
 
-    st.header("Filtros estilo Apollo")
+    st.header("Filtros")
 
     keyword = st.text_input("Keywords")
 
@@ -27,22 +33,19 @@ with st.sidebar:
     city = st.text_input("Ciudad")
     country = st.text_input("País")
 
-    company_size = st.selectbox(
-        "Tamaño empresa",
-        ["", "1-10", "11-50", "51-200", "201-500", "500+"]
+    verified_email = st.checkbox("Solo emails verificados")
+    has_phone = st.checkbox("Solo con teléfono")
+
+    max_pages = st.slider(
+        "Páginas a cargar (100 contactos por página)",
+        1,
+        50,
+        5
     )
 
-    industry = st.text_input("Industria")
+    search_button = st.button("Buscar contactos")
 
-    verified_email = st.checkbox("Solo emails verificados")
-    has_phone = st.checkbox("Solo contactos con teléfono")
-
-    max_pages = st.slider("Páginas", 1, 50, 5)
-
-    search_button = st.button("Buscar")
-
-
-# ---------- API ----------
+# ---------- CONSTRUCCIÓN PAYLOAD ----------
 
 def build_payload(page):
 
@@ -53,7 +56,6 @@ def build_payload(page):
         "organization_name": company,
         "city": city,
         "country": country,
-        "industry": industry,
     }
 
     if titles:
@@ -61,17 +63,12 @@ def build_payload(page):
             t.strip() for t in titles.split(",")
         ]
 
-    if company_size:
-        payload["organization_num_employees_ranges"] = [
-            company_size
-        ]
-
     if verified_email:
         payload["contact_email_status"] = ["verified"]
 
-    # limpiar vacíos
     return {k: v for k, v in payload.items() if v}
 
+# ---------- API CALL ----------
 
 def fetch_page(page):
 
@@ -93,7 +90,6 @@ def fetch_page(page):
     data = response.json()
     contacts = data.get("contacts", [])
 
-    # filtro local de teléfono
     if has_phone:
         contacts = [
             c for c in contacts if c.get("phone_number")
@@ -101,6 +97,7 @@ def fetch_page(page):
 
     return contacts
 
+# ---------- BÚSQUEDA ----------
 
 def search_contacts():
 
@@ -111,11 +108,12 @@ def search_contacts():
 
     for page in range(1, max_pages + 1):
 
-        status.text(f"Página {page}/{max_pages}")
+        status.text(f"Cargando página {page}/{max_pages}")
 
         contacts = fetch_page(page)
 
         if not contacts:
+            status.text("No hay más resultados disponibles")
             break
 
         for c in contacts:
@@ -128,7 +126,6 @@ def search_contacts():
                 "Ciudad": c.get("city"),
                 "País": c.get("country"),
                 "Cargo": c.get("title"),
-                "Industria": c.get("organization_industry"),
                 "LinkedIn": c.get("linkedin_url")
             })
 
@@ -138,18 +135,17 @@ def search_contacts():
 
     return pd.DataFrame(all_rows)
 
-
 # ---------- EJECUCIÓN ----------
 
 if search_button:
 
-    with st.spinner("Buscando..."):
+    with st.spinner("Buscando contactos..."):
         df = search_contacts()
 
     if df.empty:
-        st.warning("Sin resultados")
+        st.warning("No se encontraron contactos")
     else:
-        st.success(f"{len(df)} contactos")
+        st.success(f"{len(df)} contactos encontrados")
 
         st.dataframe(df, use_container_width=True)
 
@@ -158,6 +154,6 @@ if search_button:
         st.download_button(
             "Descargar CSV",
             csv,
-            "apollo_results.csv",
+            "apollo_contacts.csv",
             "text/csv"
         )
