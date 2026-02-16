@@ -3,101 +3,133 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Apollo Mixed Search", layout="wide")
-st.title("Apollo Global Leads Search")
+st.set_page_config(page_title="Apollo Contact Finder", layout="wide")
+st.title("Apollo Contact Finder")
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-# ----------- FILTROS -----------
+# ------------------ FILTROS ------------------
 
 with st.sidebar:
 
     st.header("Filtros")
 
-    titles = st.text_input("Cargos (comma separated)", "founder,ceo")
-    location = st.text_input("Ubicación", "Bogota, Colombia")
-    keyword = st.text_input("Keyword empresa", "security")
-    employees = st.selectbox("Tamaño empresa", ["0,10","11,50","51,200","201,500","500,1000"])
-    verified_email = st.checkbox("Solo emails verificados", True)
+    keywords = st.text_input("Texto libre (nombre, empresa, cargo)")
+    titles = st.text_input("Cargos (coma): CEO, Founder")
+    cities = st.text_input("Ciudades (coma): Bogota, Funza")
+    company_contains = st.text_input("Empresa contiene")
+    only_email = st.checkbox("Solo con email")
+    only_phone = st.checkbox("Solo con teléfono")
 
-    max_pages = st.slider("Páginas", 1, 20, 3)
+    pages = st.slider("Páginas", 1, 50, 5)
 
-    run = st.button("Buscar leads")
+    run = st.button("Buscar")
 
-
-# ----------- REQUEST -----------
+# ------------------ API ------------------
 
 def fetch_page(page):
 
-    url = "https://api.apollo.io/v1/mixed_people/search"
+    url = "https://api.apollo.io/v1/contacts/search"
 
     headers = {
-        "X-Api-Key": APOLLO_API_KEY,
+        "X-Api-Key": API_KEY,
         "Content-Type": "application/json"
     }
 
     payload = {
         "page": page,
-        "person_titles": [t.strip() for t in titles.split(",")],
-        "person_locations": [location],
-        "organization_num_employees_ranges": [employees],
-        "q_organization_keyword_tags": [keyword],
+        "per_page": 100
     }
 
-    if verified_email:
-        payload["contact_email_status"] = ["verified"]
+    r = requests.post(url, json=payload, headers=headers)
 
-    response = requests.post(url, json=payload, headers=headers)
-
-    if response.status_code != 200:
-        st.error(response.text)
+    if r.status_code != 200:
+        st.error(r.text)
         return []
 
-    return response.json().get("people", [])
+    return r.json().get("contacts", [])
 
+# ------------------ FILTRADO LOCAL ------------------
 
-# ----------- LOOP -----------
+def match(contact):
+
+    text = " ".join([
+        str(contact.get("name","")),
+        str(contact.get("title","")),
+        str(contact.get("organization_name","")),
+        str(contact.get("city",""))
+    ]).lower()
+
+    if keywords and keywords.lower() not in text:
+        return False
+
+    if titles:
+        valid = [t.strip().lower() for t in titles.split(",")]
+        if not any(t in text for t in valid):
+            return False
+
+    if cities:
+        valid = [c.strip().lower() for c in cities.split(",")]
+        if not any(c in text for c in valid):
+            return False
+
+    if company_contains:
+        if company_contains.lower() not in str(contact.get("organization_name","")).lower():
+            return False
+
+    if only_email and not contact.get("email"):
+        return False
+
+    if only_phone and not contact.get("phone_number"):
+        return False
+
+    return True
+
+# ------------------ BUSQUEDA ------------------
 
 def search():
 
-    results = []
+    rows = []
     progress = st.progress(0)
 
-    for page in range(1, max_pages+1):
+    for page in range(1, pages+1):
 
-        people = fetch_page(page)
+        contacts = fetch_page(page)
 
-        if not people:
+        if not contacts:
             break
 
-        for p in people:
-            results.append({
-                "Nombre": p.get("name"),
-                "Cargo": p.get("title"),
-                "Empresa": p.get("organization", {}).get("name"),
-                "Ciudad": p.get("city"),
-                "Email": p.get("email"),
-                "LinkedIn": p.get("linkedin_url")
-            })
+        for c in contacts:
+            if match(c):
+                rows.append({
+                    "Nombre": c.get("name"),
+                    "Cargo": c.get("title"),
+                    "Empresa": c.get("organization_name"),
+                    "Ciudad": c.get("city"),
+                    "Email": c.get("email"),
+                    "Teléfono": c.get("phone_number"),
+                    "LinkedIn": c.get("linkedin_url")
+                })
 
-        progress.progress(page/max_pages)
-        time.sleep(1)
+        progress.progress(page/pages)
+        time.sleep(0.4)
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(rows)
 
-
-# ----------- UI -----------
+# ------------------ UI ------------------
 
 if run:
 
-    with st.spinner("Buscando en Apollo..."):
+    with st.spinner("Buscando..."):
         df = search()
 
-    if df.empty:
-        st.warning("Sin resultados (probablemente falta permiso API)")
-    else:
-        st.success(f"{len(df)} leads encontrados")
-        st.dataframe(df, use_container_width=True)
+    st.success(f"{len(df)} resultados")
 
-        csv = df.to_csv(index=False).encode()
-        st.download_button("Descargar CSV", csv, "apollo_leads.csv")
+    st.dataframe(df, use_container_width=True)
+
+    if not df.empty:
+        st.download_button(
+            "Descargar CSV",
+            df.to_csv(index=False).encode(),
+            "contacts.csv"
+        )
