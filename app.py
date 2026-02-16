@@ -3,170 +3,101 @@ import requests
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Apollo Contacts Explorer", layout="wide")
+st.set_page_config(page_title="Apollo Mixed Search", layout="wide")
+st.title("Apollo Global Leads Search")
 
-st.title("Apollo Contacts Explorer")
+APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-# ---------- API KEY ----------
-try:
-    APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
-except:
-    st.error("API key no encontrada en Streamlit Secrets")
-    st.stop()
+# ----------- FILTROS -----------
 
-# ---------- SIDEBAR FILTROS ----------
 with st.sidebar:
 
     st.header("Filtros")
 
-    keyword = st.text_input("Keywords")
+    titles = st.text_input("Cargos (comma separated)", "founder,ceo")
+    location = st.text_input("Ubicación", "Bogota, Colombia")
+    keyword = st.text_input("Keyword empresa", "security")
+    employees = st.selectbox("Tamaño empresa", ["0,10","11,50","51,200","201,500","500,1000"])
+    verified_email = st.checkbox("Solo emails verificados", True)
 
-    titles = st.text_input(
-        "Cargos (separados por coma)",
-        placeholder="ceo, founder"
-    )
+    max_pages = st.slider("Páginas", 1, 20, 3)
 
-    company = st.text_input("Empresa")
-    city = st.text_input("Municipio / Ciudad (ej: Funza)")
-    country = st.text_input("País")
+    run = st.button("Buscar leads")
 
-    verified_email = st.checkbox("Solo emails verificados")
-    has_phone = st.checkbox("Solo con teléfono")
 
-    max_pages = st.slider(
-        "Páginas a cargar (100 contactos por página)",
-        1,
-        50,
-        5
-    )
+# ----------- REQUEST -----------
 
-    search_button = st.button("Buscar contactos")
-
-# ---------- PAYLOAD ----------
-def build_payload(page):
-
-    payload = {
-        "page": page,
-        "per_page": 100,
-        "q_keywords": keyword,
-        "organization_name": company,
-        "country": country
-    }
-
-    if titles:
-        payload["person_titles"] = [
-            t.strip() for t in titles.split(",")
-        ]
-
-    if verified_email:
-        payload["contact_email_status"] = ["verified"]
-
-    return {k: v for k, v in payload.items() if v}
-
-# ---------- FILTRO INTELIGENTE DE CIUDAD ----------
-def matches_city(contact, search_city):
-
-    search_city = search_city.lower().strip()
-
-    fields = [
-        contact.get("city"),
-        contact.get("state"),
-        contact.get("raw_address"),
-        contact.get("organization_name"),
-        contact.get("headline"),
-        contact.get("organization_website_url")
-    ]
-
-    for f in fields:
-        if f and search_city in str(f).lower():
-            return True
-
-    return False
-
-# ---------- API ----------
 def fetch_page(page):
 
-    url = "https://api.apollo.io/v1/contacts/search"
+    url = "https://api.apollo.io/v1/mixed_people/search"
 
     headers = {
         "X-Api-Key": APOLLO_API_KEY,
         "Content-Type": "application/json"
     }
 
-    payload = build_payload(page)
+    payload = {
+        "page": page,
+        "person_titles": [t.strip() for t in titles.split(",")],
+        "person_locations": [location],
+        "organization_num_employees_ranges": [employees],
+        "q_organization_keyword_tags": [keyword],
+    }
+
+    if verified_email:
+        payload["contact_email_status"] = ["verified"]
 
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code != 200:
-        st.error(f"Error API: {response.text}")
+        st.error(response.text)
         return []
 
-    data = response.json()
-    contacts = data.get("contacts", [])
+    return response.json().get("people", [])
 
-    # filtro ciudad inteligente
-    if city:
-        contacts = [c for c in contacts if matches_city(c, city)]
 
-    # filtro teléfono
-    if has_phone:
-        contacts = [c for c in contacts if c.get("phone_number")]
+# ----------- LOOP -----------
 
-    return contacts
+def search():
 
-# ---------- BÚSQUEDA ----------
-def search_contacts():
-
-    all_rows = []
-
+    results = []
     progress = st.progress(0)
-    status = st.empty()
 
-    for page in range(1, max_pages + 1):
+    for page in range(1, max_pages+1):
 
-        status.text(f"Cargando página {page}/{max_pages}")
+        people = fetch_page(page)
 
-        contacts = fetch_page(page)
-
-        if not contacts:
-            status.text("No hay más resultados disponibles")
+        if not people:
             break
 
-        for c in contacts:
-            all_rows.append({
-                "Nombre": c.get("name"),
-                "Empresa": c.get("organization_name"),
-                "Email": c.get("email"),
-                "Teléfono": c.get("phone_number"),
-                "Ciudad": c.get("city"),
-                "País": c.get("country"),
-                "Cargo": c.get("title"),
-                "LinkedIn": c.get("linkedin_url")
+        for p in people:
+            results.append({
+                "Nombre": p.get("name"),
+                "Cargo": p.get("title"),
+                "Empresa": p.get("organization", {}).get("name"),
+                "Ciudad": p.get("city"),
+                "Email": p.get("email"),
+                "LinkedIn": p.get("linkedin_url")
             })
 
-        progress.progress(page / max_pages)
-        time.sleep(0.5)
+        progress.progress(page/max_pages)
+        time.sleep(1)
 
-    return pd.DataFrame(all_rows)
+    return pd.DataFrame(results)
 
-# ---------- EJECUCIÓN ----------
-if search_button:
 
-    with st.spinner("Buscando contactos..."):
-        df = search_contacts()
+# ----------- UI -----------
+
+if run:
+
+    with st.spinner("Buscando en Apollo..."):
+        df = search()
 
     if df.empty:
-        st.warning("No se encontraron contactos con esos filtros")
+        st.warning("Sin resultados (probablemente falta permiso API)")
     else:
-        st.success(f"{len(df)} contactos encontrados")
-
+        st.success(f"{len(df)} leads encontrados")
         st.dataframe(df, use_container_width=True)
 
-        csv = df.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Descargar CSV",
-            csv,
-            "apollo_contacts.csv",
-            "text/csv"
-        )
+        csv = df.to_csv(index=False).encode()
+        st.download_button("Descargar CSV", csv, "apollo_leads.csv")
