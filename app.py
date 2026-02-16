@@ -8,7 +8,6 @@ st.set_page_config(page_title="Apollo Contacts Explorer", layout="wide")
 st.title("Apollo Contacts Explorer")
 
 # ---------- API KEY ----------
-
 try:
     APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
 except:
@@ -16,7 +15,6 @@ except:
     st.stop()
 
 # ---------- SIDEBAR FILTROS ----------
-
 with st.sidebar:
 
     st.header("Filtros")
@@ -30,7 +28,7 @@ with st.sidebar:
 
     company = st.text_input("Empresa")
 
-    city = st.text_input("Ciudad")
+    city = st.text_input("Ciudad exacta (ej: Funza)")
     country = st.text_input("País")
 
     verified_email = st.checkbox("Solo emails verificados")
@@ -45,8 +43,7 @@ with st.sidebar:
 
     search_button = st.button("Buscar contactos")
 
-# ---------- CONSTRUCCIÓN PAYLOAD ----------
-
+# ---------- PAYLOAD ----------
 def build_payload(page):
 
     payload = {
@@ -54,8 +51,7 @@ def build_payload(page):
         "per_page": 100,
         "q_keywords": keyword,
         "organization_name": company,
-        "city": city,
-        "country": country,
+        "country": country
     }
 
     if titles:
@@ -68,8 +64,7 @@ def build_payload(page):
 
     return {k: v for k, v in payload.items() if v}
 
-# ---------- API CALL ----------
-
+# ---------- API ----------
 def fetch_page(page):
 
     url = "https://api.apollo.io/v1/contacts/search"
@@ -90,6 +85,14 @@ def fetch_page(page):
     data = response.json()
     contacts = data.get("contacts", [])
 
+    # ---------- FILTRO LOCAL EXACTO DE CIUDAD ----------
+    if city:
+        contacts = [
+            c for c in contacts
+            if c.get("city") and c.get("city").strip().lower() == city.strip().lower()
+        ]
+
+    # ---------- FILTRO TELÉFONO ----------
     if has_phone:
         contacts = [
             c for c in contacts if c.get("phone_number")
@@ -98,7 +101,6 @@ def fetch_page(page):
     return contacts
 
 # ---------- BÚSQUEDA ----------
-
 def search_contacts():
 
     all_rows = []
@@ -130,20 +132,18 @@ def search_contacts():
             })
 
         progress.progress(page / max_pages)
-
         time.sleep(0.5)
 
     return pd.DataFrame(all_rows)
 
 # ---------- EJECUCIÓN ----------
-
 if search_button:
 
     with st.spinner("Buscando contactos..."):
         df = search_contacts()
 
     if df.empty:
-        st.warning("No se encontraron contactos")
+        st.warning("No se encontraron contactos con esos filtros")
     else:
         st.success(f"{len(df)} contactos encontrados")
 
