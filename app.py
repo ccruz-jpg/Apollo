@@ -9,7 +9,7 @@ st.title("Apollo Contacts Explorer")
 
 # ---------- API KEY ----------
 try:
-    APOLLO_API_KEY = "0fl3eqL2h102aiuGCleiPw"
+    APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 except:
     st.error("API key no encontrada en Streamlit Secrets")
     st.stop()
