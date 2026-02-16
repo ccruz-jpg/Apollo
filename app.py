@@ -27,8 +27,7 @@ with st.sidebar:
     )
 
     company = st.text_input("Empresa")
-
-    city = st.text_input("Ciudad exacta (ej: Funza)")
+    city = st.text_input("Municipio / Ciudad (ej: Funza)")
     country = st.text_input("País")
 
     verified_email = st.checkbox("Solo emails verificados")
@@ -64,6 +63,26 @@ def build_payload(page):
 
     return {k: v for k, v in payload.items() if v}
 
+# ---------- FILTRO INTELIGENTE DE CIUDAD ----------
+def matches_city(contact, search_city):
+
+    search_city = search_city.lower().strip()
+
+    fields = [
+        contact.get("city"),
+        contact.get("state"),
+        contact.get("raw_address"),
+        contact.get("organization_name"),
+        contact.get("headline"),
+        contact.get("organization_website_url")
+    ]
+
+    for f in fields:
+        if f and search_city in str(f).lower():
+            return True
+
+    return False
+
 # ---------- API ----------
 def fetch_page(page):
 
@@ -85,18 +104,13 @@ def fetch_page(page):
     data = response.json()
     contacts = data.get("contacts", [])
 
-    # ---------- FILTRO LOCAL EXACTO DE CIUDAD ----------
+    # filtro ciudad inteligente
     if city:
-        contacts = [
-            c for c in contacts
-            if c.get("city") and c.get("city").strip().lower() == city.strip().lower()
-        ]
+        contacts = [c for c in contacts if matches_city(c, city)]
 
-    # ---------- FILTRO TELÉFONO ----------
+    # filtro teléfono
     if has_phone:
-        contacts = [
-            c for c in contacts if c.get("phone_number")
-        ]
+        contacts = [c for c in contacts if c.get("phone_number")]
 
     return contacts
 
@@ -119,7 +133,6 @@ def search_contacts():
             break
 
         for c in contacts:
-
             all_rows.append({
                 "Nombre": c.get("name"),
                 "Empresa": c.get("organization_name"),
