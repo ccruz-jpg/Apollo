@@ -3,12 +3,27 @@ import requests
 import pandas as pd
 
 # ======================================================
-# CONFIGURACIÓN
+# CONFIGURACIÓN GENERAL
 # ======================================================
 
-st.set_page_config(page_title="Apollo API Console", layout="wide")
+st.set_page_config(page_title="Consola Apollo API", layout="wide")
 
-API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
+st.title("🚀 Consola Apollo API")
+
+# ======================================================
+# API KEY
+# ======================================================
+
+# Primero intenta leer desde Secrets (producción)
+if "APOLLO_API_KEY" in st.secrets:
+    API_KEY = st.secrets["KqTN83fY1U5Ic4O4-FhRzQ"]
+else:
+    # Si no existe, permite ingresarla manualmente (modo fallback)
+    st.warning("No se encontró APOLLO_API_KEY en Secrets. Ingrésala manualmente.")
+    API_KEY = st.text_input("Ingresa tu Apollo API Key", type="password")
+
+if not API_KEY:
+    st.stop()
 
 HEADERS = {
     "Content-Type": "application/json",
@@ -18,7 +33,7 @@ HEADERS = {
 BASE_URL = "https://api.apollo.io/v1"
 
 # ======================================================
-# FUNCIÓN GENÉRICA POST
+# FUNCIÓN POST
 # ======================================================
 
 def ejecutar_post(endpoint, payload):
@@ -32,11 +47,8 @@ def ejecutar_post(endpoint, payload):
     return response.json()
 
 # ======================================================
-# INTERFAZ
+# FORMULARIO
 # ======================================================
-
-st.title("🚀 Consola Completa Apollo API")
-st.markdown("Ejecuta cualquier método principal de Apollo y descarga el resultado.")
 
 with st.form("formulario_principal"):
 
@@ -44,22 +56,14 @@ with st.form("formulario_principal"):
         "Selecciona el método",
         [
             "Buscar Personas",
-            "Buscar Empresas",
-            "Enriquecer Persona",
-            "Enriquecer Empresa",
-            "Match Persona por Email",
-            "Match Empresa por Dominio"
+            "Buscar Empresas"
         ]
     )
 
-    st.markdown("### Parámetros")
-
-    cargos = st.text_input("Cargos (separados por coma)")
-    industrias = st.text_input("Industrias (separadas por coma)")
-    ubicaciones = st.text_input("Ubicaciones (separadas por coma)")
-    email = st.text_input("Email")
-    dominio = st.text_input("Dominio (ej: empresa.com)")
-    paginas = st.number_input("Número de páginas (solo búsqueda)", 1, 20, 1)
+    cargos = st.text_input("Cargos (solo personas)")
+    industrias = st.text_input("Industrias")
+    ubicaciones = st.text_input("Ubicaciones")
+    paginas = st.number_input("Número de páginas", 1, 20, 1)
 
     ejecutar = st.form_submit_button("Ejecutar consulta")
 
@@ -73,7 +77,9 @@ if ejecutar:
     payload = {}
 
     if metodo == "Buscar Personas":
+
         endpoint = "mixed_people/search"
+
         payload = {
             "page": paginas,
             "per_page": 50,
@@ -83,7 +89,9 @@ if ejecutar:
         }
 
     elif metodo == "Buscar Empresas":
+
         endpoint = "organizations/search"
+
         payload = {
             "page": paginas,
             "per_page": 50,
@@ -91,36 +99,7 @@ if ejecutar:
             "organization_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
         }
 
-    elif metodo == "Enriquecer Persona":
-        if not email:
-            st.warning("Debes ingresar un email.")
-            st.stop()
-        endpoint = "people/enrich"
-        payload = {"email": email}
-
-    elif metodo == "Enriquecer Empresa":
-        if not dominio:
-            st.warning("Debes ingresar un dominio.")
-            st.stop()
-        endpoint = "organizations/enrich"
-        payload = {"domain": dominio}
-
-    elif metodo == "Match Persona por Email":
-        if not email:
-            st.warning("Debes ingresar un email.")
-            st.stop()
-        endpoint = "people/match"
-        payload = {"email": email}
-
-    elif metodo == "Match Empresa por Dominio":
-        if not dominio:
-            st.warning("Debes ingresar un dominio.")
-            st.stop()
-        endpoint = "organizations/match"
-        payload = {"domain": dominio}
-
     if not endpoint:
-        st.error("Método no válido.")
         st.stop()
 
     with st.spinner("Consultando Apollo..."):
@@ -129,11 +108,22 @@ if ejecutar:
     if not resultado:
         st.stop()
 
-    df = pd.json_normalize(resultado)
+    # Extraer correctamente la lista interna
+    if metodo == "Buscar Personas":
+        datos = resultado.get("people", [])
+    else:
+        datos = resultado.get("organizations", [])
 
-    st.success("Consulta completada.")
+    if not datos:
+        st.warning("No se encontraron resultados.")
+        st.stop()
+
+    df = pd.json_normalize(datos)
+
+    st.success(f"Se encontraron {len(df)} registros.")
     st.dataframe(df, use_container_width=True)
 
+    # Exportar CSV (estable)
     csv = df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
