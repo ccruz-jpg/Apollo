@@ -76,10 +76,6 @@ if ejecutar:
     endpoint = ""
     payload = {}
 
-    # -----------------------------
-    # BÚSQUEDAS
-    # -----------------------------
-
     if metodo == "Buscar Personas":
         endpoint = "mixed_people/search"
         payload = {
@@ -99,10 +95,6 @@ if ejecutar:
             "organization_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
         }
 
-    # -----------------------------
-    # ENRIQUECIMIENTO
-    # -----------------------------
-
     elif metodo == "Enriquecer Persona":
         if not email:
             st.warning("Debes ingresar un email.")
@@ -116,10 +108,6 @@ if ejecutar:
             st.stop()
         endpoint = "organizations/enrich"
         payload = {"domain": dominio}
-
-    # -----------------------------
-    # MATCH
-    # -----------------------------
 
     elif metodo == "Match Persona por Email":
         if not email:
@@ -135,10 +123,6 @@ if ejecutar:
         endpoint = "organizations/match"
         payload = {"domain": dominio}
 
-    # -----------------------------
-    # EJECUCIÓN
-    # -----------------------------
-
     if not endpoint:
         st.error("Método no válido.")
         st.stop()
@@ -149,16 +133,11 @@ if ejecutar:
     if not resultado:
         st.stop()
 
-    # Normalizar respuesta
-    if isinstance(resultado, dict):
-        df = pd.json_normalize(resultado)
-    else:
-        df = pd.DataFrame(resultado)
+    df = pd.json_normalize(resultado)
 
     st.success("Consulta completada.")
     st.dataframe(df, use_container_width=True)
 
-    # Exportar CSV (estable en Streamlit Cloud)
     csv = df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
