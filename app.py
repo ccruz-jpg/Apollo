@@ -3,156 +3,136 @@ import requests
 import pandas as pd
 from io import BytesIO
 
-# =====================================================
-# CONFIG
-# =====================================================
+# ======================================================
+# CONFIGURACIÓN
+# ======================================================
 
-st.set_page_config(page_title="Apollo API Explorer", layout="wide")
+st.set_page_config(page_title="Apollo API Console", layout="wide")
 
-API_KEY = st.secrets["KqTN83fY1U5Ic4O4-FhRzQ"]
+# Validación segura del API Key
+if "APOLLO_API_KEY" not in st.secrets:
+    st.error("No se encontró APOLLO_API_KEY en los Secrets de Streamlit Cloud.")
+    st.stop()
+
+APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
 HEADERS = {
     "Content-Type": "application/json",
     "X-Api-Key": API_KEY
 }
 
-# =====================================================
-# FUNCIÓN GENERICA PARA LLAMAR ENDPOINT
-# =====================================================
+BASE_URL = "https://api.apollo.io/v1"
 
-def llamar_endpoint(endpoint, payload):
+# ======================================================
+# FUNCIÓN GENÉRICA
+# ======================================================
 
-    url = f"https://api.apollo.io{endpoint}"
+def ejecutar_post(endpoint, payload):
 
+    url = f"{BASE_URL}/{endpoint}"
     response = requests.post(url, json=payload, headers=HEADERS)
 
     if response.status_code != 200:
-        st.error(f"Error {response.status_code}: {response.text}")
+        st.error(response.text)
         return None
 
     return response.json()
 
+# ======================================================
+# INTERFAZ
+# ======================================================
 
-# =====================================================
-# UI
-# =====================================================
+st.title("🚀 Apollo API - Consola Completa")
 
-st.title("🚀 Apollo API Explorer")
+with st.form("formulario_principal"):
 
-with st.sidebar:
-
-    st.header("Configuración")
-
-    endpoint = st.selectbox(
-        "Selecciona el endpoint",
+    metodo = st.selectbox(
+        "Selecciona el método",
         [
-            "/v1/mixed_people/search",
-            "/v1/organizations/search",
-            "/v1/people/bulk_match",
-            "/v1/organizations/enrich"
+            "Buscar Personas",
+            "Buscar Empresas",
+            "Enriquecer Persona",
+            "Enriquecer Empresa",
+            "Match Persona por Email",
+            "Match Empresa por Dominio"
         ]
     )
 
-# =====================================================
-# FORMULARIO DINÁMICO SEGÚN ENDPOINT
-# =====================================================
-
-st.subheader(f"Endpoint seleccionado: {endpoint}")
-
-payload = {}
-
-if endpoint == "/v1/mixed_people/search":
-
     cargos = st.text_input("Cargos (coma)")
-    empresa = st.text_input("Empresa (coma)")
-    ubicacion = st.text_input("Ubicación (coma)")
-    pagina = st.number_input("Página", 1, 20, 1)
+    industrias = st.text_input("Industrias (coma)")
+    ubicaciones = st.text_input("Ubicaciones (coma)")
+    email = st.text_input("Email")
+    dominio = st.text_input("Dominio")
+    paginas = st.number_input("Páginas (solo búsqueda)", 1, 20, 1)
 
-    if st.button("Ejecutar búsqueda"):
+    ejecutar = st.form_submit_button("Ejecutar")
 
+# ======================================================
+# LÓGICA
+# ======================================================
+
+if ejecutar:
+
+    payload = {}
+    endpoint = ""
+
+    if metodo == "Buscar Personas":
+        endpoint = "mixed_people/search"
         payload = {
-            "page": pagina,
+            "page": paginas,
             "per_page": 50,
             "person_titles": [c.strip() for c in cargos.split(",")] if cargos else [],
-            "organization_names": [e.strip() for e in empresa.split(",")] if empresa else [],
-            "person_locations": [u.strip() for u in ubicacion.split(",")] if ubicacion else []
+            "organization_industries": [i.strip() for i in industrias.split(",")] if industrias else [],
+            "person_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
         }
 
-        data = llamar_endpoint(endpoint, payload)
-
-elif endpoint == "/v1/organizations/search":
-
-    nombre_empresa = st.text_input("Nombre de empresa (coma)")
-    industria = st.text_input("Industria (coma)")
-    pagina = st.number_input("Página", 1, 20, 1)
-
-    if st.button("Ejecutar búsqueda"):
-
+    elif metodo == "Buscar Empresas":
+        endpoint = "organizations/search"
         payload = {
-            "page": pagina,
+            "page": paginas,
             "per_page": 50,
-            "organization_names": [n.strip() for n in nombre_empresa.split(",")] if nombre_empresa else [],
-            "organization_industries": [i.strip() for i in industria.split(",")] if industria else []
+            "organization_industries": [i.strip() for i in industrias.split(",")] if industrias else [],
+            "organization_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
         }
 
-        data = llamar_endpoint(endpoint, payload)
+    elif metodo == "Enriquecer Persona":
+        endpoint = "people/enrich"
+        payload = {"email": email}
 
-elif endpoint == "/v1/people/bulk_match":
+    elif metodo == "Enriquecer Empresa":
+        endpoint = "organizations/enrich"
+        payload = {"domain": dominio}
 
-    email = st.text_input("Email de la persona")
+    elif metodo == "Match Persona por Email":
+        endpoint = "people/match"
+        payload = {"email": email}
 
-    if st.button("Enriquecer persona"):
+    elif metodo == "Match Empresa por Dominio":
+        endpoint = "organizations/match"
+        payload = {"domain": dominio}
 
-        payload = {
-            "details": [
-                {
-                    "email": email
-                }
-            ]
-        }
+    if not endpoint:
+        st.warning("Método no válido.")
+        st.stop()
 
-        data = llamar_endpoint(endpoint, payload)
+    with st.spinner("Consultando Apollo..."):
+        resultado = ejecutar_post(endpoint, payload)
 
-elif endpoint == "/v1/organizations/enrich":
+    if not resultado:
+        st.stop()
 
-    dominio = st.text_input("Dominio (ej: empresa.com)")
+    df = pd.json_normalize(resultado)
 
-    if st.button("Enriquecer empresa"):
+    st.success("Consulta completada.")
+    st.dataframe(df, use_container_width=True)
 
-        payload = {
-            "domain": dominio
-        }
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False)
+    buffer.seek(0)
 
-        data = llamar_endpoint(endpoint, payload)
-
-# =====================================================
-# MOSTRAR RESULTADOS
-# =====================================================
-
-if "data" in locals() and data:
-
-    st.success("Respuesta recibida correctamente")
-
-    if isinstance(data, dict):
-
-        # Intentar normalizar si viene lista dentro
-        if "people" in data:
-            df = pd.json_normalize(data["people"])
-        elif "organizations" in data:
-            df = pd.json_normalize(data["organizations"])
-        else:
-            df = pd.json_normalize(data)
-
-        st.dataframe(df, use_container_width=True)
-
-        # Exportar
-        archivo = BytesIO()
-        df.to_excel(archivo, index=False)
-        archivo.seek(0)
-
-        st.download_button(
-            "Descargar resultado en Excel",
-            data=archivo,
-            file_name="resultado_apollo.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        "📥 Descargar Excel",
+        data=buffer,
+        file_name="apollo_resultado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
