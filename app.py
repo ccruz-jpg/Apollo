@@ -1,135 +1,120 @@
 import streamlit as st
 import requests
 import pandas as pd
-import time
+from io import BytesIO
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
-st.set_page_config(page_title="Apollo Contact Finder", layout="wide")
-st.title("Apollo Contact Finder")
+# =============================
+# CONFIG
+# =============================
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-# ------------------ FILTROS ------------------
+# =============================
+# FUNCION CONSULTA APOLLO
+# =============================
 
-with st.sidebar:
+def search_apollo(job_titles, industries, locations, page=1):
 
-    st.header("Filtros")
-
-    keywords = st.text_input("Texto libre (nombre, empresa, cargo)")
-    titles = st.text_input("Cargos (coma): CEO, Founder")
-    cities = st.text_input("Ciudades (coma): Bogota, Funza")
-    company_contains = st.text_input("Empresa contiene")
-    only_email = st.checkbox("Solo con email")
-    only_phone = st.checkbox("Solo con teléfono")
-
-    pages = st.slider("Páginas", 1, 50, 5)
-
-    run = st.button("Buscar")
-
-# ------------------ API ------------------
-
-def fetch_page(page):
-
-    url = "https://api.apollo.io/v1/contacts/search"
-
-    headers = {
-        "X-Api-Key": API_KEY,
-        "Content-Type": "application/json"
-    }
+    url = "https://api.apollo.io/v1/mixed_people/search"
 
     payload = {
+        "api_key": APOLLO_API_KEY,
         "page": page,
-        "per_page": 100
+        "person_titles": job_titles,
+        "organization_industries": industries,
+        "person_locations": locations
     }
 
-    r = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload)
+    return response.json()
 
-    if r.status_code != 200:
-        st.error(r.text)
-        return []
 
-    return r.json().get("contacts", [])
+# =============================
+# GOOGLE DRIVE UPLOAD
+# =============================
 
-# ------------------ FILTRADO LOCAL ------------------
+def upload_to_drive(file_bytes, filename):
 
-def match(contact):
+    credentials = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/drive.file"]
+    )
 
-    text = " ".join([
-        str(contact.get("name","")),
-        str(contact.get("title","")),
-        str(contact.get("organization_name","")),
-        str(contact.get("city",""))
-    ]).lower()
+    service = build("drive", "v3", credentials=credentials)
 
-    if keywords and keywords.lower() not in text:
-        return False
+    file_metadata = {
+        "name": filename
+    }
 
-    if titles:
-        valid = [t.strip().lower() for t in titles.split(",")]
-        if not any(t in text for t in valid):
-            return False
+    media = MediaIoBaseUpload(file_bytes,
+                               mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    if cities:
-        valid = [c.strip().lower() for c in cities.split(",")]
-        if not any(c in text for c in valid):
-            return False
+    file = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields="id"
+    ).execute()
 
-    if company_contains:
-        if company_contains.lower() not in str(contact.get("organization_name","")).lower():
-            return False
+    return file.get("id")
 
-    if only_email and not contact.get("email"):
-        return False
 
-    if only_phone and not contact.get("phone_number"):
-        return False
+# =============================
+# STREAMLIT UI
+# =============================
 
-    return True
+st.title("Apollo Lead Extractor")
 
-# ------------------ BUSQUEDA ------------------
+with st.sidebar:
+    st.header("Filtros")
 
-def search():
+    job_titles = st.text_input("Job Titles (separados por coma)")
+    industries = st.text_input("Industrias (coma)")
+    locations = st.text_input("Ubicaciones (coma)")
+    page = st.number_input("Página", min_value=1, value=1)
 
-    rows = []
-    progress = st.progress(0)
+if st.button("Buscar en Apollo"):
 
-    for page in range(1, pages+1):
+    with st.spinner("Consultando Apollo..."):
 
-        contacts = fetch_page(page)
-
-        if not contacts:
-            break
-
-        for c in contacts:
-            if match(c):
-                rows.append({
-                    "Nombre": c.get("name"),
-                    "Cargo": c.get("title"),
-                    "Empresa": c.get("organization_name"),
-                    "Ciudad": c.get("city"),
-                    "Email": c.get("email"),
-                    "Teléfono": c.get("phone_number"),
-                    "LinkedIn": c.get("linkedin_url")
-                })
-
-        progress.progress(page/pages)
-        time.sleep(0.4)
-
-    return pd.DataFrame(rows)
-
-# ------------------ UI ------------------
-
-if run:
-
-    with st.spinner("Buscando..."):
-        df = search()
-
-    st.success(f"{len(df)} resultados")
-
-    st.dataframe(df, use_container_width=True)
-
-    if not df.empty:
-        st.download_button(
-            "Descargar CSV",
-            df.to_csv(index=False).encode(),
-            "contacts.csv"
+        data = search_apollo(
+            job_titles.split(","),
+            industries.split(","),
+            locations.split(","),
+            page
         )
+
+        people = data.get("people", [])
+
+        if not people:
+            st.warning("No se encontraron resultados")
+        else:
+            df = pd.json_normalize(people)
+
+            st.success(f"{len(df)} resultados encontrados")
+            st.dataframe(df)
+
+            # =====================
+            # EXPORTAR A EXCEL
+            # =====================
+
+            output = BytesIO()
+            df.to_excel(output, index=False)
+            output.seek(0)
+
+            st.download_button(
+                label="Descargar Excel",
+                data=output,
+                file_name="apollo_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+            # =====================
+            # SUBIR A DRIVE
+            # =====================
+
+            if st.button("Subir a Google Drive"):
+                file_id = upload_to_drive(output, "apollo_results.xlsx")
+                st.success(f"Archivo subido. ID: {file_id}")
