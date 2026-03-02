@@ -2,168 +2,116 @@ import streamlit as st
 import requests
 import pandas as pd
 from io import BytesIO
-import json
 
-# ======================================================
-# CONFIG
-# ======================================================
+# =========================================================
+# CONFIGURACIÓN INICIAL
+# =========================================================
 
-st.set_page_config(page_title="Apollo API Console", layout="wide")
+st.set_page_config(
+    page_title="Extractor de Leads - Apollo",
+    layout="wide"
+)
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-Api-Key": API_KEY
-}
+# =========================================================
+# FUNCIÓN PARA CONSULTAR APOLLO
+# =========================================================
 
-BASE_URL = "https://api.apollo.io/v1"
+@st.cache_data(show_spinner=False)
+def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
 
-# ======================================================
-# FUNCIÓN GENÉRICA
-# ======================================================
+    url = "https://api.apollo.io/v1/mixed_people/search"
 
-def ejecutar_post(endpoint, payload):
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": APOLLO_API_KEY
+    }
 
-    url = f"{BASE_URL}/{endpoint}"
-    response = requests.post(url, json=payload, headers=HEADERS)
+    todos_los_resultados = []
 
-    if response.status_code != 200:
-        st.error(response.text)
-        return None
+    for pagina in range(1, total_paginas + 1):
 
-    return response.json()
-
-
-# ======================================================
-# UI
-# ======================================================
-
-st.title("🚀 Apollo API - Consola Completa")
-
-with st.form("formulario_principal"):
-
-    metodo = st.selectbox(
-        "Selecciona el método",
-        [
-            "Buscar Personas",
-            "Enriquecer Persona",
-            "Enriquecer Personas (Bulk)",
-            "Buscar Empresas",
-            "Enriquecer Empresa",
-            "Enriquecer Empresas (Bulk)",
-            "Match Persona por Email",
-            "Match Empresa por Dominio"
-        ]
-    )
-
-    st.markdown("### Parámetros")
-
-    # Campos dinámicos
-    cargos = st.text_input("Cargos (coma)")
-    industrias = st.text_input("Industrias (coma)")
-    ubicaciones = st.text_input("Ubicaciones (coma)")
-    email = st.text_input("Email")
-    dominio = st.text_input("Dominio (ej: empresa.com)")
-    paginas = st.number_input("Páginas (solo búsqueda)", 1, 20, 1)
-
-    ejecutar = st.form_submit_button("Ejecutar")
-
-# ======================================================
-# LÓGICA
-# ======================================================
-
-if ejecutar:
-
-    payload = {}
-    endpoint = ""
-
-    # --------------------------------------------------
-    # PERSONAS
-    # --------------------------------------------------
-
-    if metodo == "Buscar Personas":
-        endpoint = "mixed_people/search"
         payload = {
-            "page": paginas,
+            "page": pagina,
             "per_page": 50,
-            "person_titles": [c.strip() for c in cargos.split(",")] if cargos else [],
-            "organization_industries": [i.strip() for i in industrias.split(",")] if industrias else [],
-            "person_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
+            "person_titles": cargos,
+            "organization_industries": industrias,
+            "person_locations": ubicaciones
         }
 
-    elif metodo == "Enriquecer Persona":
-        endpoint = "people/enrich"
-        payload = {"email": email}
+        response = requests.post(url, json=payload, headers=headers)
 
-    elif metodo == "Enriquecer Personas (Bulk)":
-        endpoint = "people/bulk_enrich"
-        emails = [e.strip() for e in email.split(",")]
-        payload = {"emails": emails}
+        if response.status_code != 200:
+            st.error(f"Error en página {pagina}: {response.text}")
+            break
 
-    # --------------------------------------------------
-    # EMPRESAS
-    # --------------------------------------------------
+        data = response.json()
+        personas = data.get("people", [])
 
-    elif metodo == "Buscar Empresas":
-        endpoint = "organizations/search"
-        payload = {
-            "page": paginas,
-            "per_page": 50,
-            "organization_industries": [i.strip() for i in industrias.split(",")] if industrias else [],
-            "organization_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
-        }
+        if not personas:
+            break
 
-    elif metodo == "Enriquecer Empresa":
-        endpoint = "organizations/enrich"
-        payload = {"domain": dominio}
+        todos_los_resultados.extend(personas)
 
-    elif metodo == "Enriquecer Empresas (Bulk)":
-        endpoint = "organizations/bulk_enrich"
-        dominios = [d.strip() for d in dominio.split(",")]
-        payload = {"domains": dominios}
+    return todos_los_resultados
 
-    # --------------------------------------------------
-    # MATCH
-    # --------------------------------------------------
 
-    elif metodo == "Match Persona por Email":
-        endpoint = "people/match"
-        payload = {"email": email}
+# =========================================================
+# INTERFAZ
+# =========================================================
 
-    elif metodo == "Match Empresa por Dominio":
-        endpoint = "organizations/match"
-        payload = {"domain": dominio}
+st.title("🚀 Extractor de Leads desde Apollo")
+st.markdown("Consulta Apollo usando filtros personalizados y descarga los resultados en Excel.")
 
-    # ==================================================
+with st.sidebar:
 
-    if not endpoint:
-        st.warning("Método no válido.")
+    st.header("🔎 Filtros de búsqueda")
+
+    cargos = st.text_input("Cargos (separados por coma)", placeholder="Ej: CEO, Marketing Manager")
+    industrias = st.text_input("Industrias (separadas por coma)", placeholder="Ej: Software, Fintech")
+    ubicaciones = st.text_input("Ubicaciones (separadas por coma)", placeholder="Ej: United States, Spain")
+    total_paginas = st.number_input("Número de páginas a consultar", min_value=1, max_value=20, value=1)
+
+# =========================================================
+# BOTÓN DE BÚSQUEDA
+# =========================================================
+
+if st.button("🔍 Buscar leads"):
+
+    if not cargos:
+        st.warning("Debes ingresar al menos un cargo.")
         st.stop()
 
     with st.spinner("Consultando Apollo..."):
-        resultado = ejecutar_post(endpoint, payload)
 
-    if not resultado:
-        st.stop()
+        resultados = buscar_en_apollo(
+            [c.strip() for c in cargos.split(",")],
+            [i.strip() for i in industrias.split(",")] if industrias else [],
+            [u.strip() for u in ubicaciones.split(",")] if ubicaciones else [],
+            total_paginas
+        )
 
-    # Normalizar resultado
-    if isinstance(resultado, dict):
-        df = pd.json_normalize(resultado)
-    else:
-        df = pd.json_normalize(resultado)
+        if not resultados:
+            st.warning("No se encontraron resultados con esos filtros.")
+            st.stop()
 
-    st.success("Consulta completada.")
-    st.dataframe(df, use_container_width=True)
+        df = pd.json_normalize(resultados)
 
-    # Exportar
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False)
-    buffer.seek(0)
+        st.success(f"Se encontraron {len(df)} leads.")
+        st.dataframe(df, use_container_width=True)
 
-    st.download_button(
-        "📥 Descargar Excel",
-        data=buffer,
-        file_name="apollo_resultado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # =====================================================
+        # EXPORTAR A EXCEL
+        # =====================================================
+
+        archivo_excel = BytesIO()
+        df.to_excel(archivo_excel, index=False)
+        archivo_excel.seek(0)
+
+        st.download_button(
+            label="📥 Descargar resultados en Excel",
+            data=archivo_excel,
+            file_name="leads_apollo.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
