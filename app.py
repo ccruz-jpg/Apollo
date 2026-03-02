@@ -3,94 +3,115 @@ import requests
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Apollo Extractor", layout="wide")
+# =========================================================
+# CONFIGURACIÓN INICIAL
+# =========================================================
+
+st.set_page_config(
+    page_title="Extractor de Leads - Apollo",
+    layout="wide"
+)
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-# ==================================================
-# FUNCIÓN CONSULTA APOLLO
-# ==================================================
+# =========================================================
+# FUNCIÓN PARA CONSULTAR APOLLO
+# =========================================================
 
 @st.cache_data(show_spinner=False)
-def search_apollo(job_titles, industries, locations, total_pages):
+def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
 
     url = "https://api.apollo.io/v1/mixed_people/search"
-    all_people = []
 
-    for page in range(1, total_pages + 1):
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": APOLLO_API_KEY
+    }
+
+    todos_los_resultados = []
+
+    for pagina in range(1, total_paginas + 1):
 
         payload = {
-            "api_key": APOLLO_API_KEY,
-            "page": page,
-            "person_titles": job_titles,
-            "organization_industries": industries,
-            "person_locations": locations
+            "page": pagina,
+            "per_page": 50,
+            "person_titles": cargos,
+            "organization_industries": industrias,
+            "person_locations": ubicaciones
         }
 
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=headers)
 
         if response.status_code != 200:
-            st.error(f"Error en página {page}: {response.text}")
+            st.error(f"Error en página {pagina}: {response.text}")
             break
 
         data = response.json()
-        people = data.get("people", [])
+        personas = data.get("people", [])
 
-        if not people:
+        if not personas:
             break
 
-        all_people.extend(people)
+        todos_los_resultados.extend(personas)
 
-    return all_people
+    return todos_los_resultados
 
 
-# ==================================================
-# UI
-# ==================================================
+# =========================================================
+# INTERFAZ
+# =========================================================
 
-st.title("🚀 Apollo Lead Extractor")
-st.markdown("Consulta Apollo y descarga los resultados en Excel.")
+st.title("🚀 Extractor de Leads desde Apollo")
+st.markdown("Consulta Apollo usando filtros personalizados y descarga los resultados en Excel.")
 
 with st.sidebar:
-    st.header("Filtros")
 
-    job_titles = st.text_input("Job Titles (separados por coma)")
-    industries = st.text_input("Industrias (coma)")
-    locations = st.text_input("Ubicaciones (coma)")
-    pages = st.number_input("Número de páginas", min_value=1, max_value=20, value=1)
+    st.header("🔎 Filtros de búsqueda")
 
-if st.button("Buscar en Apollo"):
+    cargos = st.text_input("Cargos (separados por coma)", placeholder="Ej: CEO, Marketing Manager")
+    industrias = st.text_input("Industrias (separadas por coma)", placeholder="Ej: Software, Fintech")
+    ubicaciones = st.text_input("Ubicaciones (separadas por coma)", placeholder="Ej: United States, Spain")
+    total_paginas = st.number_input("Número de páginas a consultar", min_value=1, max_value=20, value=1)
 
-    if not job_titles:
-        st.warning("Debes ingresar al menos un Job Title")
+# =========================================================
+# BOTÓN DE BÚSQUEDA
+# =========================================================
+
+if st.button("🔍 Buscar leads"):
+
+    if not cargos:
+        st.warning("Debes ingresar al menos un cargo.")
         st.stop()
 
     with st.spinner("Consultando Apollo..."):
 
-        results = search_apollo(
-            [x.strip() for x in job_titles.split(",")],
-            [x.strip() for x in industries.split(",")] if industries else [],
-            [x.strip() for x in locations.split(",")] if locations else [],
-            pages
+        resultados = buscar_en_apollo(
+            [c.strip() for c in cargos.split(",")],
+            [i.strip() for i in industrias.split(",")] if industrias else [],
+            [u.strip() for u in ubicaciones.split(",")] if ubicaciones else [],
+            total_paginas
         )
 
-        if not results:
-            st.warning("No se encontraron resultados.")
+        if not resultados:
+            st.warning("No se encontraron resultados con esos filtros.")
             st.stop()
 
-        df = pd.json_normalize(results)
+        df = pd.json_normalize(resultados)
 
         st.success(f"Se encontraron {len(df)} leads.")
         st.dataframe(df, use_container_width=True)
 
-        # Exportar a Excel
-        output = BytesIO()
-        df.to_excel(output, index=False)
-        output.seek(0)
+        # =====================================================
+        # EXPORTAR A EXCEL
+        # =====================================================
+
+        archivo_excel = BytesIO()
+        df.to_excel(archivo_excel, index=False)
+        archivo_excel.seek(0)
 
         st.download_button(
-            label="📥 Descargar Excel",
-            data=output,
-            file_name="apollo_results.xlsx",
+            label="📥 Descargar resultados en Excel",
+            data=archivo_excel,
+            file_name="leads_apollo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
