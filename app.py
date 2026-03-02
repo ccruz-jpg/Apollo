@@ -3,115 +3,156 @@ import requests
 import pandas as pd
 from io import BytesIO
 
-# =========================================================
-# CONFIGURACIÓN INICIAL
-# =========================================================
+# =====================================================
+# CONFIG
+# =====================================================
 
-st.set_page_config(
-    page_title="Extractor de Leads - Apollo",
-    layout="wide"
-)
+st.set_page_config(page_title="Apollo API Explorer", layout="wide")
 
-APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
+API_KEY = st.secrets["KqTN83fY1U5Ic4O4-FhRzQ"]
 
-# =========================================================
-# FUNCIÓN PARA CONSULTAR APOLLO
-# =========================================================
+HEADERS = {
+    "Content-Type": "application/json",
+    "X-Api-Key": API_KEY
+}
 
-@st.cache_data(show_spinner=False)
-def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
+# =====================================================
+# FUNCIÓN GENERICA PARA LLAMAR ENDPOINT
+# =====================================================
 
-    url = "https://api.apollo.io/v1/mixed_people/search"
+def llamar_endpoint(endpoint, payload):
 
-    headers = {
-        "Content-Type": "application/json",
-        "X-Api-Key": APOLLO_API_KEY
-    }
+    url = f"https://api.apollo.io{endpoint}"
 
-    todos_los_resultados = []
+    response = requests.post(url, json=payload, headers=HEADERS)
 
-    for pagina in range(1, total_paginas + 1):
+    if response.status_code != 200:
+        st.error(f"Error {response.status_code}: {response.text}")
+        return None
+
+    return response.json()
+
+
+# =====================================================
+# UI
+# =====================================================
+
+st.title("🚀 Apollo API Explorer")
+
+with st.sidebar:
+
+    st.header("Configuración")
+
+    endpoint = st.selectbox(
+        "Selecciona el endpoint",
+        [
+            "/v1/mixed_people/search",
+            "/v1/organizations/search",
+            "/v1/people/bulk_match",
+            "/v1/organizations/enrich"
+        ]
+    )
+
+# =====================================================
+# FORMULARIO DINÁMICO SEGÚN ENDPOINT
+# =====================================================
+
+st.subheader(f"Endpoint seleccionado: {endpoint}")
+
+payload = {}
+
+if endpoint == "/v1/mixed_people/search":
+
+    cargos = st.text_input("Cargos (coma)")
+    empresa = st.text_input("Empresa (coma)")
+    ubicacion = st.text_input("Ubicación (coma)")
+    pagina = st.number_input("Página", 1, 20, 1)
+
+    if st.button("Ejecutar búsqueda"):
 
         payload = {
             "page": pagina,
             "per_page": 50,
-            "person_titles": cargos,
-            "organization_industries": industrias,
-            "person_locations": ubicaciones
+            "person_titles": [c.strip() for c in cargos.split(",")] if cargos else [],
+            "organization_names": [e.strip() for e in empresa.split(",")] if empresa else [],
+            "person_locations": [u.strip() for u in ubicacion.split(",")] if ubicacion else []
         }
 
-        response = requests.post(url, json=payload, headers=headers)
+        data = llamar_endpoint(endpoint, payload)
 
-        if response.status_code != 200:
-            st.error(f"Error en página {pagina}: {response.text}")
-            break
+elif endpoint == "/v1/organizations/search":
 
-        data = response.json()
-        personas = data.get("people", [])
+    nombre_empresa = st.text_input("Nombre de empresa (coma)")
+    industria = st.text_input("Industria (coma)")
+    pagina = st.number_input("Página", 1, 20, 1)
 
-        if not personas:
-            break
+    if st.button("Ejecutar búsqueda"):
 
-        todos_los_resultados.extend(personas)
+        payload = {
+            "page": pagina,
+            "per_page": 50,
+            "organization_names": [n.strip() for n in nombre_empresa.split(",")] if nombre_empresa else [],
+            "organization_industries": [i.strip() for i in industria.split(",")] if industria else []
+        }
 
-    return todos_los_resultados
+        data = llamar_endpoint(endpoint, payload)
 
+elif endpoint == "/v1/people/bulk_match":
 
-# =========================================================
-# INTERFAZ
-# =========================================================
+    email = st.text_input("Email de la persona")
 
-st.title("🚀 Extractor de Leads desde Apollo")
-st.markdown("Consulta Apollo usando filtros personalizados y descarga los resultados en Excel.")
+    if st.button("Enriquecer persona"):
 
-with st.sidebar:
+        payload = {
+            "details": [
+                {
+                    "email": email
+                }
+            ]
+        }
 
-    st.header("🔎 Filtros de búsqueda")
+        data = llamar_endpoint(endpoint, payload)
 
-    cargos = st.text_input("Cargos (separados por coma)", placeholder="Ej: CEO, Marketing Manager")
-    industrias = st.text_input("Industrias (separadas por coma)", placeholder="Ej: Software, Fintech")
-    ubicaciones = st.text_input("Ubicaciones (separadas por coma)", placeholder="Ej: United States, Spain")
-    total_paginas = st.number_input("Número de páginas a consultar", min_value=1, max_value=20, value=1)
+elif endpoint == "/v1/organizations/enrich":
 
-# =========================================================
-# BOTÓN DE BÚSQUEDA
-# =========================================================
+    dominio = st.text_input("Dominio (ej: empresa.com)")
 
-if st.button("🔍 Buscar leads"):
+    if st.button("Enriquecer empresa"):
 
-    if not cargos:
-        st.warning("Debes ingresar al menos un cargo.")
-        st.stop()
+        payload = {
+            "domain": dominio
+        }
 
-    with st.spinner("Consultando Apollo..."):
+        data = llamar_endpoint(endpoint, payload)
 
-        resultados = buscar_en_apollo(
-            [c.strip() for c in cargos.split(",")],
-            [i.strip() for i in industrias.split(",")] if industrias else [],
-            [u.strip() for u in ubicaciones.split(",")] if ubicaciones else [],
-            total_paginas
-        )
+# =====================================================
+# MOSTRAR RESULTADOS
+# =====================================================
 
-        if not resultados:
-            st.warning("No se encontraron resultados con esos filtros.")
-            st.stop()
+if "data" in locals() and data:
 
-        df = pd.json_normalize(resultados)
+    st.success("Respuesta recibida correctamente")
 
-        st.success(f"Se encontraron {len(df)} leads.")
+    if isinstance(data, dict):
+
+        # Intentar normalizar si viene lista dentro
+        if "people" in data:
+            df = pd.json_normalize(data["people"])
+        elif "organizations" in data:
+            df = pd.json_normalize(data["organizations"])
+        else:
+            df = pd.json_normalize(data)
+
         st.dataframe(df, use_container_width=True)
 
-        # =====================================================
-        # EXPORTAR A EXCEL
-        # =====================================================
-
-        archivo_excel = BytesIO()
-        df.to_excel(archivo_excel, index=False)
-        archivo_excel.seek(0)
+        # Exportar
+        archivo = BytesIO()
+        df.to_excel(archivo, index=False)
+        archivo.seek(0)
 
         st.download_button(
-            label="📥 Descargar resultados en Excel",
-            data=archivo_excel,
-            file_name="leads_apollo.xlsx",
+            "Descargar resultado en Excel",
+            data=archivo,
+            file_name="resultado_apollo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
