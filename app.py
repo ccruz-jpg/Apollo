@@ -3,9 +3,9 @@ import requests
 import pandas as pd
 from io import BytesIO
 
-# =========================================================
-# CONFIGURACIÓN INICIAL
-# =========================================================
+# ======================================================
+# CONFIGURACIÓN GENERAL
+# ======================================================
 
 st.set_page_config(
     page_title="Extractor de Leads - Apollo",
@@ -14,9 +14,9 @@ st.set_page_config(
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
-# =========================================================
-# FUNCIÓN PARA CONSULTAR APOLLO
-# =========================================================
+# ======================================================
+# FUNCIÓN CONSULTA APOLLO
+# ======================================================
 
 @st.cache_data(show_spinner=False)
 def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
@@ -28,7 +28,7 @@ def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
         "X-Api-Key": APOLLO_API_KEY
     }
 
-    todos_los_resultados = []
+    todos_los_leads = []
 
     for pagina in range(1, total_paginas + 1):
 
@@ -52,30 +52,47 @@ def buscar_en_apollo(cargos, industrias, ubicaciones, total_paginas):
         if not personas:
             break
 
-        todos_los_resultados.extend(personas)
+        todos_los_leads.extend(personas)
 
-    return todos_los_resultados
+    return todos_los_leads
 
 
-# =========================================================
-# INTERFAZ
-# =========================================================
+# ======================================================
+# INTERFAZ STREAMLIT
+# ======================================================
 
 st.title("🚀 Extractor de Leads desde Apollo")
-st.markdown("Consulta Apollo usando filtros personalizados y descarga los resultados en Excel.")
+st.markdown("Filtra contactos en Apollo y descarga los resultados en Excel.")
 
 with st.sidebar:
-
     st.header("🔎 Filtros de búsqueda")
 
-    cargos = st.text_input("Cargos (separados por coma)", placeholder="Ej: CEO, Marketing Manager")
-    industrias = st.text_input("Industrias (separadas por coma)", placeholder="Ej: Software, Fintech")
-    ubicaciones = st.text_input("Ubicaciones (separadas por coma)", placeholder="Ej: United States, Spain")
-    total_paginas = st.number_input("Número de páginas a consultar", min_value=1, max_value=20, value=1)
+    cargos = st.text_input(
+        "Cargos (separados por coma)",
+        placeholder="Ej: CEO, Marketing Manager"
+    )
 
-# =========================================================
+    industrias = st.text_input(
+        "Industrias (separadas por coma)",
+        placeholder="Ej: Software, Fintech"
+    )
+
+    ubicaciones = st.text_input(
+        "Ubicaciones (separadas por coma)",
+        placeholder="Ej: United States, Spain"
+    )
+
+    total_paginas = st.number_input(
+        "Número de páginas a consultar",
+        min_value=1,
+        max_value=20,
+        value=1
+    )
+
+
+# ======================================================
 # BOTÓN DE BÚSQUEDA
-# =========================================================
+# ======================================================
 
 if st.button("🔍 Buscar leads"):
 
@@ -101,17 +118,17 @@ if st.button("🔍 Buscar leads"):
         st.success(f"Se encontraron {len(df)} leads.")
         st.dataframe(df, use_container_width=True)
 
-        # =====================================================
+        # ==================================================
         # EXPORTAR A EXCEL
-        # =====================================================
+        # ==================================================
 
-        archivo_excel = BytesIO()
-        df.to_excel(archivo_excel, index=False)
-        archivo_excel.seek(0)
+        buffer_excel = BytesIO()
+        df.to_excel(buffer_excel, index=False)
+        buffer_excel.seek(0)
 
         st.download_button(
             label="📥 Descargar resultados en Excel",
-            data=archivo_excel,
+            data=buffer_excel,
             file_name="leads_apollo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
