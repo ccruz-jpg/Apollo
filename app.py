@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import pandas as pd
-from io import BytesIO
 
 # ======================================================
 # CONFIGURACIÓN
@@ -9,26 +8,29 @@ from io import BytesIO
 
 st.set_page_config(page_title="Apollo API Console", layout="wide")
 
-APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
+if "APOLLO_API_KEY" not in st.secrets:
+    st.error("No se encontró APOLLO_API_KEY en los Secrets de Streamlit Cloud.")
+    st.stop()
+
+API_KEY = st.secrets["KqTN83fY1U5Ic4O4-FhRzQ"]
 
 HEADERS = {
     "Content-Type": "application/json",
-    "X-Api-Key": APOLLO_API_KEY
+    "X-Api-Key": API_KEY
 }
 
 BASE_URL = "https://api.apollo.io/v1"
 
 # ======================================================
-# FUNCIÓN GENÉRICA
+# FUNCIÓN GENÉRICA POST
 # ======================================================
 
 def ejecutar_post(endpoint, payload):
-
     url = f"{BASE_URL}/{endpoint}"
     response = requests.post(url, json=payload, headers=HEADERS)
 
     if response.status_code != 200:
-        st.error(response.text)
+        st.error(f"Error {response.status_code}: {response.text}")
         return None
 
     return response.json()
@@ -37,7 +39,8 @@ def ejecutar_post(endpoint, payload):
 # INTERFAZ
 # ======================================================
 
-st.title("🚀 Apollo API - Consola Completa")
+st.title("🚀 Consola Completa Apollo API")
+st.markdown("Ejecuta cualquier método principal de Apollo y descarga el resultado.")
 
 with st.form("formulario_principal"):
 
@@ -53,14 +56,16 @@ with st.form("formulario_principal"):
         ]
     )
 
-    cargos = st.text_input("Cargos (coma)")
-    industrias = st.text_input("Industrias (coma)")
-    ubicaciones = st.text_input("Ubicaciones (coma)")
-    email = st.text_input("Email")
-    dominio = st.text_input("Dominio")
-    paginas = st.number_input("Páginas (solo búsqueda)", 1, 20, 1)
+    st.markdown("### Parámetros")
 
-    ejecutar = st.form_submit_button("Ejecutar")
+    cargos = st.text_input("Cargos (separados por coma)")
+    industrias = st.text_input("Industrias (separadas por coma)")
+    ubicaciones = st.text_input("Ubicaciones (separadas por coma)")
+    email = st.text_input("Email")
+    dominio = st.text_input("Dominio (ej: empresa.com)")
+    paginas = st.number_input("Número de páginas (solo búsqueda)", 1, 20, 1)
+
+    ejecutar = st.form_submit_button("Ejecutar consulta")
 
 # ======================================================
 # LÓGICA
@@ -68,8 +73,12 @@ with st.form("formulario_principal"):
 
 if ejecutar:
 
-    payload = {}
     endpoint = ""
+    payload = {}
+
+    # -----------------------------
+    # BÚSQUEDAS
+    # -----------------------------
 
     if metodo == "Buscar Personas":
         endpoint = "mixed_people/search"
@@ -90,24 +99,48 @@ if ejecutar:
             "organization_locations": [u.strip() for u in ubicaciones.split(",")] if ubicaciones else []
         }
 
+    # -----------------------------
+    # ENRIQUECIMIENTO
+    # -----------------------------
+
     elif metodo == "Enriquecer Persona":
+        if not email:
+            st.warning("Debes ingresar un email.")
+            st.stop()
         endpoint = "people/enrich"
         payload = {"email": email}
 
     elif metodo == "Enriquecer Empresa":
+        if not dominio:
+            st.warning("Debes ingresar un dominio.")
+            st.stop()
         endpoint = "organizations/enrich"
         payload = {"domain": dominio}
 
+    # -----------------------------
+    # MATCH
+    # -----------------------------
+
     elif metodo == "Match Persona por Email":
+        if not email:
+            st.warning("Debes ingresar un email.")
+            st.stop()
         endpoint = "people/match"
         payload = {"email": email}
 
     elif metodo == "Match Empresa por Dominio":
+        if not dominio:
+            st.warning("Debes ingresar un dominio.")
+            st.stop()
         endpoint = "organizations/match"
         payload = {"domain": dominio}
 
+    # -----------------------------
+    # EJECUCIÓN
+    # -----------------------------
+
     if not endpoint:
-        st.warning("Método no válido.")
+        st.error("Método no válido.")
         st.stop()
 
     with st.spinner("Consultando Apollo..."):
@@ -116,18 +149,21 @@ if ejecutar:
     if not resultado:
         st.stop()
 
-    df = pd.json_normalize(resultado)
+    # Normalizar respuesta
+    if isinstance(resultado, dict):
+        df = pd.json_normalize(resultado)
+    else:
+        df = pd.DataFrame(resultado)
 
     st.success("Consulta completada.")
     st.dataframe(df, use_container_width=True)
 
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False)
-    buffer.seek(0)
+    # Exportar CSV (estable en Streamlit Cloud)
+    csv = df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
-        "📥 Descargar Excel",
-        data=buffer,
-        file_name="apollo_resultado.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "📥 Descargar CSV",
+        data=csv,
+        file_name="apollo_resultado.csv",
+        mime="text/csv"
     )
