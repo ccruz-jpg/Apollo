@@ -2,17 +2,13 @@ import streamlit as st
 import requests
 import pandas as pd
 from io import BytesIO
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
-import json
-import tempfile
 
 st.set_page_config(page_title="Apollo Extractor", layout="wide")
 
 APOLLO_API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
 # ==================================================
-# APOLLO SEARCH
+# FUNCIÓN CONSULTA APOLLO
 # ==================================================
 
 @st.cache_data(show_spinner=False)
@@ -34,7 +30,7 @@ def search_apollo(job_titles, industries, locations, total_pages):
         response = requests.post(url, json=payload)
 
         if response.status_code != 200:
-            st.error(response.text)
+            st.error(f"Error en página {page}: {response.text}")
             break
 
         data = response.json()
@@ -49,74 +45,52 @@ def search_apollo(job_titles, industries, locations, total_pages):
 
 
 # ==================================================
-# DRIVE UPLOAD (PYDRIVE2)
-# ==================================================
-
-def upload_to_drive(file_bytes, filename):
-
-    service_account_info = st.secrets["gcp_service_account"]
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-        tmp.write(json.dumps(service_account_info).encode())
-        tmp_path = tmp.name
-
-    gauth = GoogleAuth()
-    gauth.settings['client_config_file'] = tmp_path
-    gauth.ServiceAuth()
-
-    drive = GoogleDrive(gauth)
-
-    file_drive = drive.CreateFile({"title": filename})
-    file_drive.content = file_bytes.read()
-    file_drive.Upload()
-
-    return file_drive['alternateLink']
-
-
-# ==================================================
 # UI
 # ==================================================
 
-st.title("Apollo Lead Extractor")
+st.title("🚀 Apollo Lead Extractor")
+st.markdown("Consulta Apollo y descarga los resultados en Excel.")
 
 with st.sidebar:
-    job_titles = st.text_input("Job Titles (coma)")
+    st.header("Filtros")
+
+    job_titles = st.text_input("Job Titles (separados por coma)")
     industries = st.text_input("Industrias (coma)")
     locations = st.text_input("Ubicaciones (coma)")
-    pages = st.number_input("Páginas", 1, 20, 1)
+    pages = st.number_input("Número de páginas", min_value=1, max_value=20, value=1)
 
-if st.button("Buscar"):
+if st.button("Buscar en Apollo"):
 
-    results = search_apollo(
-        [x.strip() for x in job_titles.split(",")],
-        [x.strip() for x in industries.split(",")] if industries else [],
-        [x.strip() for x in locations.split(",")] if locations else [],
-        pages
-    )
-
-    if not results:
-        st.warning("Sin resultados")
+    if not job_titles:
+        st.warning("Debes ingresar al menos un Job Title")
         st.stop()
 
-    df = pd.json_normalize(results)
+    with st.spinner("Consultando Apollo..."):
 
-    st.dataframe(df, use_container_width=True)
+        results = search_apollo(
+            [x.strip() for x in job_titles.split(",")],
+            [x.strip() for x in industries.split(",")] if industries else [],
+            [x.strip() for x in locations.split(",")] if locations else [],
+            pages
+        )
 
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
+        if not results:
+            st.warning("No se encontraron resultados.")
+            st.stop()
 
-    col1, col2 = st.columns(2)
+        df = pd.json_normalize(results)
 
-    with col1:
+        st.success(f"Se encontraron {len(df)} leads.")
+        st.dataframe(df, use_container_width=True)
+
+        # Exportar a Excel
+        output = BytesIO()
+        df.to_excel(output, index=False)
+        output.seek(0)
+
         st.download_button(
-            "Descargar Excel",
+            label="📥 Descargar Excel",
             data=output,
             file_name="apollo_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-    with col2:
-        if st.button("Subir a Drive"):
-            link = upload_to_drive(output, "apollo_results.xlsx")
-            st.success(f"Archivo subido: {link}")
