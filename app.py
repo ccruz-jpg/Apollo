@@ -8,11 +8,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Apollo API Console", layout="wide")
 
-if "APOLLO_API_KEY" not in st.secrets:
-    st.error("No se encontró APOLLO_API_KEY en los Secrets de Streamlit Cloud.")
-    st.stop()
-
-API_KEY = st.secrets["KqTN83fY1U5Ic4O4-FhRzQ"]
+API_KEY = "KqTN83fY1U5Ic4O4-FhRzQ"
 
 HEADERS = {
     "Content-Type": "application/json",
